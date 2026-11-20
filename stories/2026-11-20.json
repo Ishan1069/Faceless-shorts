@@ -1,0 +1,26 @@
+{
+  "slug": "2026-11-20-the-baby-monitor",
+  "title": "The Baby Monitor",
+  "youtube_title": "My Baby Monitor Picked Up Someone Who Wasn't There #scarystories",
+  "caption": "We don't have a baby anymore. So why is the monitor still on? 😨 Follow for a new scary story every day.",
+  "hashtags": ["scarystories", "horrortok", "creepy", "horrorstories", "truescary", "storytime", "fyp"],
+  "style": "dark cinematic digital painting, eerie moonlight, deep shadows, muted blue and amber palette, horror movie still",
+  "scenes": [
+    {"text": "We sold the crib two years ago. So I don't know why the baby monitor turned itself on last night.",
+     "image_prompt": "old white baby monitor glowing green on a dark nightstand, empty bedroom at night"},
+    {"text": "At first it was just static. Then I heard it. Someone humming a lullaby. Slowly. Off key.",
+     "image_prompt": "close up of a baby monitor speaker with faint green lights, static in a dark room"},
+    {"text": "My wife was asleep beside me. My son is twelve now, and he was at his grandmother's house.",
+     "image_prompt": "a woman sleeping in bed lit by cold moonlight through blinds, man awake staring at ceiling"},
+    {"text": "The camera for that monitor was still mounted in the old nursery. The room we use for storage now.",
+     "image_prompt": "dark hallway leading to a half open door, cardboard boxes inside, moonlight on the floor"},
+    {"text": "I picked up the screen. The room was full of boxes. And in the middle of them, the rocking chair was moving.",
+     "image_prompt": "grainy night vision view of a storage room full of boxes, a wooden rocking chair in the center"},
+    {"text": "Back and forth. Back and forth. Nobody in it. The humming got louder.",
+     "image_prompt": "empty wooden rocking chair in motion in a dark nursery, dust in the air, eerie glow"},
+    {"text": "Then the humming stopped, and a soft voice whispered through the speaker. Daddy, you forgot me.",
+     "image_prompt": "baby monitor screen showing a dark room with a small pale shadowy figure behind the chair"},
+    {"text": "We never had a daughter. But this morning, the crib was back in that room.",
+     "image_prompt": "old white wooden crib alone in a dusty room in morning light, toys arranged inside, unsettling"}
+  ]
+}

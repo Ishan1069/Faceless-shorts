@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Faceless short-video engine.
+
+Usage: python3 make_video.py story.json OUT_DIR
+
+story.json:
+{
+  "slug": "the-last-caller",
+  "style": "dark cinematic digital painting, moody lighting, film grain",
+  "scenes": [{"text": "Narration sentence(s)...", "image_prompt": "what the picture shows"}, ...]
+}
+Produces OUT_DIR/<slug>.mp4 (1080x1920, 30fps) and OUT_DIR/<slug>.jpg (cover).
+"""
+import json, os, sys, subprocess, wave, re, urllib.parse, urllib.request, time, random, shutil
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+VOICE_DIR = os.path.expanduser("~/.faceless_voices")
+VOICE = "en_US-ryan-high"
+VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/"
+FONT_DIR = os.path.join(HERE, "fonts")
+W, H, FPS = 1080, 1920, 30
+
+
+def sh(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode:
+        sys.stderr.write(r.stderr[-3000:])
+        raise SystemExit(f"command failed: {cmd[:3]}")
+    return r.stdout
+
+
+def ensure_voice():
+    os.makedirs(VOICE_DIR, exist_ok=True)
+    for ext in (".onnx", ".onnx.json"):
+        p = os.path.join(VOICE_DIR, VOICE + ext)
+        if not os.path.exists(p) or os.path.getsize(p) < 1000:
+            urllib.request.urlretrieve(VOICE_URL + VOICE + ext, p)
+    return os.path.join(VOICE_DIR, VOICE + ".onnx")
+
+
+def tts(scenes, work):
+    from piper import PiperVoice
+    from piper.config import SynthesisConfig
+    voice = PiperVoice.load(ensure_voice())
+    cfg = SynthesisConfig(length_scale=1.08, noise_scale=0.6, noise_w_scale=0.8)
+    pieces, times, t = [], [], 0.0
+    gap = 0.35
+    rate = None
+    for i, sc in enumerate(scenes):
+        p = os.path.join(work, f"v{i}.wav")
+        with wave.open(p, "wb") as wf:
+            voice.synthesize_wav(sc["text"], wf, syn_config=cfg)
+        with wave.open(p) as wf:
+            rate = wf.getframerate()
+            d = wf.getnframes() / rate
+        pieces.append(p)
+        times.append((t, t + d + gap))
+        t += d + gap
+    # concat with gaps
+    out = os.path.join(work, "narration.wav")
+    with wave.open(out, "wb") as o:
+        o.setnchannels(1); o.setsampwidth(2); o.setframerate(rate)
+        silence = b"\x00\x00" * int(rate * gap)
+        for p in pieces:
+            with wave.open(p) as wf:
+                o.writeframes(wf.readframes(wf.getnframes()))
+            o.writeframes(silence)
+    return out, times, t
+
+
+def fetch_image(prompt, style, path, seed):
+    full = f"{prompt}, {style}, vertical composition, highly detailed, no text, no watermark"
+    url = ("https://image.pollinations.ai/prompt/" + urllib.parse.quote(full) +
+           f"?width=1080&height=1920&nologo=true&seed={seed}&model=flux")
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=180) as r:
+                data = r.read()
+            if len(data) > 20000:
+                open(path, "wb").write(data)
+                return True
+        except Exception as e:
+            sys.stderr.write(f"image retry {attempt}: {e}\n")
+        time.sleep(10 + attempt * 15)
+    # fallback: dark gradient so the pipeline never stops
+    sh(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+        f"gradients=s={W}x{H}:c0=0x0a0a12:c1=0x2a0d0d:duration=1", "-frames:v", "1", path])
+    return False
+
+
+def scene_clip(img, dur, idx, path):
+    frames = int(round(dur * FPS))
+    zin = idx % 2 == 0
+    z = "min(1.0+0.0009*on,1.25)" if zin else "max(1.25-0.0009*on,1.0)"
+    vf = (f"crop=iw:ih*0.94:0:0,scale={W*2}:{H*2}:force_original_aspect_ratio=increase,crop={W*2}:{H*2},"
+          f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps={FPS},"
+          f"eq=contrast=1.08:saturation=0.85:brightness=0.0,vignette=PI/4,"
+          f"noise=alls=3:allf=t,format=yuv420p")
+    sh(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-i", img, "-vf", vf,
+        "-frames:v", str(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", path])
+
+
+def words_timing(narr, scenes, total):
+    """Word-level timestamps from whisper; script words used when counts line up."""
+    script_words = " ".join(s["text"] for s in scenes).split()
+    try:
+        import numpy as np
+        from faster_whisper import WhisperModel
+        with wave.open(narr) as wf:
+            sr = wf.getframerate()
+            a = np.frombuffer(wf.readframes(wf.getnframes()), np.int16).astype(np.float32) / 32768
+        if sr != 16000:
+            idx = np.linspace(0, len(a) - 1, int(len(a) * 16000 / sr)).astype(int)
+            a = a[idx]
+        m = WhisperModel("base.en", compute_type="int8")
+        segs, _ = m.transcribe(a, word_timestamps=True, initial_prompt=" ".join(script_words[:60]))
+        ws = [(w.word.strip(), w.start, w.end) for s in segs for w in s.words]
+        if len(ws) == len(script_words):
+            return [(script_words[i], ws[i][1], ws[i][2]) for i in range(len(ws))]
+        if ws:
+            # map script words onto whisper timeline proportionally
+            import difflib
+            norm = lambda x: re.sub(r"[^a-z0-9']", "", x.lower())
+            sm = difflib.SequenceMatcher(a=[norm(w) for w in script_words], b=[norm(w[0]) for w in ws])
+            out = [None] * len(script_words)
+            for blk in sm.get_matching_blocks():
+                for k in range(blk.size):
+                    out[blk.a + k] = (ws[blk.b + k][1], ws[blk.b + k][2])
+            # interpolate gaps
+            known = [i for i, v in enumerate(out) if v]
+            for i in range(len(out)):
+                if out[i] is None:
+                    prev = max([k for k in known if k < i], default=None)
+                    nxt = min([k for k in known if k > i], default=None)
+                    t0 = out[prev][1] if prev is not None else 0.0
+                    t1 = out[nxt][0] if nxt is not None else total
+                    span = (nxt if nxt is not None else len(out)) - (prev if prev is not None else -1)
+                    pos = i - (prev if prev is not None else -1)
+                    s0 = t0 + (t1 - t0) * (pos - 1) / span
+                    out[i] = (s0, t0 + (t1 - t0) * pos / span)
+            return [(script_words[i], out[i][0], out[i][1]) for i in range(len(out))]
+    except Exception as e:
+        sys.stderr.write(f"whisper timing failed, using estimate: {e}\n")
+    # fallback: proportional by characters
+    n = sum(len(w) + 1 for w in script_words)
+    t, res = 0.0, []
+    for w in script_words:
+        d = total * (len(w) + 1) / n
+        res.append((w, t, t + d)); t += d
+    return res
+
+
+def ass_time(t):
+    t = max(t, 0)
+    return f"{int(t//3600)}:{int(t%3600//60):02d}:{t%60:05.2f}"
+
+
+def write_ass(words, path):
+    chunks, cur = [], []
+    for w in words:
+        cur.append(w)
+        if len(cur) >= 3 or re.search(r"[.,!?;:…]$", w[0]):
+            chunks.append(cur); cur = []
+    if cur: chunks.append(cur)
+    head = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: {W}
+PlayResY: {H}
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Cap,Anton,118,&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,0,0,0,0,100,100,2,0,1,8,4,5,70,70,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    lines = []
+    for ci, ch in enumerate(chunks):
+        end_chunk = chunks[ci + 1][0][1] if ci + 1 < len(chunks) else ch[-1][2] + 0.4
+        for wi, w in enumerate(ch):
+            st = w[1]
+            en = ch[wi + 1][1] if wi + 1 < len(ch) else end_chunk
+            parts = []
+            for k, x in enumerate(ch):
+                txt = x[0].upper().replace("{", "").replace("}", "")
+                parts.append("{\\c&H0033D7FF&\\fscx108\\fscy108}" + txt + "{\\c&H00FFFFFF&\\fscx100\\fscy100}"
+                             if k == wi else txt)
+            pos = "{\\an5\\pos(540,1180)}"
+            lines.append(f"Dialogue: 0,{ass_time(st)},{ass_time(en)},Cap,,0,0,0,,{pos}{' '.join(parts)}")
+    open(path, "w").write(head + "\n".join(lines) + "\n")
+
+
+def main():
+    story = json.load(open(sys.argv[1]))
+    outdir = os.path.abspath(sys.argv[2])
+    os.makedirs(outdir, exist_ok=True)
+    slug = re.sub(r"[^a-z0-9-]+", "-", story.get("slug", "video").lower()).strip("-")
+    work = os.path.join(outdir, "_work_" + slug)
+    os.makedirs(work, exist_ok=True)
+    scenes = story["scenes"]
+    style = story.get("style", "dark cinematic digital painting, eerie atmosphere, dramatic shadows")
+
+    narr, times, total = tts(scenes, work)
+    print(f"narration {total:.1f}s, {len(scenes)} scenes", flush=True)
+
+    base_seed = random.randint(1, 10**6)
+    clips = []
+    for i, sc in enumerate(scenes):
+        img = os.path.join(work, f"img{i}.jpg")
+        ok = os.path.exists(img) and os.path.getsize(img) > 20000
+        if not ok:
+            ok = fetch_image(sc["image_prompt"], style, img, base_seed + i)
+            time.sleep(3)
+        print(f"image {i}: {'ai' if ok else 'fallback'}", flush=True)
+        c = os.path.join(work, f"clip{i}.mp4")
+        scene_clip(img, times[i][1] - times[i][0], i, c)
+        clips.append(c)
+        if i == 0:
+            shutil.copy(img, os.path.join(outdir, slug + ".jpg"))
+
+    lst = os.path.join(work, "list.txt")
+    open(lst, "w").write("".join(f"file '{c}'\n" for c in clips))
+    silent = os.path.join(work, "silent.mp4")
+    sh(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", silent])
+
+    words = words_timing(narr, scenes, total)
+    ass = os.path.join(work, "caps.ass")
+    write_ass(words, ass)
+
+    out = os.path.join(outdir, slug + ".mp4")
+    # ambient drone bed: low detuned sines + filtered brown noise
+    drone = (f"aevalsrc='0.5*sin(2*PI*55*t)+0.35*sin(2*PI*55.7*t)+0.2*sin(2*PI*82.4*t)*(0.6+0.4*sin(2*PI*0.07*t))':"
+             f"s=44100:d={total+0.5}")
+    fc = (f"[0:v]ass={ass}:fontsdir={FONT_DIR},fade=t=in:st=0:d=0.4,fade=t=out:st={total-0.6:.2f}:d=0.6[v];"
+          f"[1:a]aresample=44100,volume=1.6,acompressor=threshold=-18dB:ratio=3[n];"
+          f"[2:a]volume=0.05[d];[3:a]lowpass=f=400,volume=0.08[b];"
+          f"[n][d][b]amix=inputs=3:duration=first:normalize=0,alimiter=limit=0.95,"
+          f"afade=t=out:st={total-0.6:.2f}:d=0.6[a]")
+    sh(["ffmpeg", "-y", "-v", "error", "-i", silent, "-i", narr,
+        "-f", "lavfi", "-i", drone,
+        "-f", "lavfi", "-i", f"anoisesrc=c=brown:a=0.5:d={total+0.5}:r=44100",
+        "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-maxrate", "6M", "-bufsize", "12M", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-t", f"{total:.2f}", out])
+    shutil.rmtree(work, ignore_errors=True)
+    print(json.dumps({"video": out, "cover": os.path.join(outdir, slug + ".jpg"), "duration": round(total, 1)}))
+
+
+if __name__ == "__main__":
+    main()
