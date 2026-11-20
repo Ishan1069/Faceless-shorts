@@ -14,6 +14,6 @@ git commit -q -m "media $(date +%F)"
 git remote add origin "$(git -C "$REPO_DIR" remote get-url origin)"
 git push -q -f origin media
 for f in "$@"; do
-  echo "https://raw.githubusercontent.com/Ishan1069/faceless-shorts/media/$(basename "$f")"
+  echo "https://raw.githubusercontent.com/Ishan1069/Faceless-shorts/media/$(basename "$f")"
 done
 rm -rf "$TMP"
