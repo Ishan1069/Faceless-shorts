@@ -133,53 +133,68 @@ def make_fog(path):
         "-frames:v", "1", path])
 
 
-def words_timing(narr, scenes, total):
-    """Word-level timestamps from whisper; script words used when counts line up."""
-    script_words = " ".join(s["text"] for s in scenes).split()
+def _align(script_words, ws, t0, t1):
+    """Map script words onto whisper words [(word,start,end)] inside one scene window [t0,t1]."""
+    import difflib
+    norm = lambda x: re.sub(r"[^a-z0-9']", "", x.lower())
+    out = [None] * len(script_words)
+    if ws:
+        sm = difflib.SequenceMatcher(a=[norm(w) for w in script_words], b=[norm(w[0]) for w in ws],
+                                     autojunk=False)
+        for blk in sm.get_matching_blocks():
+            for k in range(blk.size):
+                out[blk.a + k] = (ws[blk.b + k][1], ws[blk.b + k][2])
+    known = [i for i, v in enumerate(out) if v]
+    # unmatched words: spread by character length between the nearest matched neighbours
+    i = 0
+    while i < len(out):
+        if out[i] is not None:
+            i += 1; continue
+        j = i
+        while j < len(out) and out[j] is None:
+            j += 1
+        g0 = out[i - 1][1] if i > 0 else (t0 if not known else min(t0 + 0.05, out[known[0]][0]))
+        g1 = out[j][0] if j < len(out) else (ws[-1][2] if ws else t1)
+        if g1 <= g0:
+            g1 = g0 + 0.15 * (j - i)
+        lens = [len(w) + 1 for w in script_words[i:j]]
+        tot, c = sum(lens), g0
+        for k, L in enumerate(lens):
+            d = (g1 - g0) * L / tot
+            out[i + k] = (c, c + d); c += d
+        i = j
+    return [(script_words[k], max(t0, min(out[k][0], t1)), max(t0, min(out[k][1], t1)))
+            for k in range(len(out))]
+
+
+def words_timing(work, scenes, times):
+    """Word timestamps aligned per scene: whisper on each scene's own clip, offset by its known start,
+    so drift can never accumulate across scenes."""
+    model = None
     try:
         import numpy as np
         from faster_whisper import WhisperModel
-        with wave.open(narr) as wf:
-            sr = wf.getframerate()
-            a = np.frombuffer(wf.readframes(wf.getnframes()), np.int16).astype(np.float32) / 32768
-        if sr != 16000:
-            idx = np.linspace(0, len(a) - 1, int(len(a) * 16000 / sr)).astype(int)
-            a = a[idx]
-        m = WhisperModel("base.en", compute_type="int8")
-        segs, _ = m.transcribe(a, word_timestamps=True, initial_prompt=" ".join(script_words[:60]))
-        ws = [(w.word.strip(), w.start, w.end) for s in segs for w in s.words]
-        if len(ws) == len(script_words):
-            return [(script_words[i], ws[i][1], ws[i][2]) for i in range(len(ws))]
-        if ws:
-            # map script words onto whisper timeline proportionally
-            import difflib
-            norm = lambda x: re.sub(r"[^a-z0-9']", "", x.lower())
-            sm = difflib.SequenceMatcher(a=[norm(w) for w in script_words], b=[norm(w[0]) for w in ws])
-            out = [None] * len(script_words)
-            for blk in sm.get_matching_blocks():
-                for k in range(blk.size):
-                    out[blk.a + k] = (ws[blk.b + k][1], ws[blk.b + k][2])
-            # interpolate gaps
-            known = [i for i, v in enumerate(out) if v]
-            for i in range(len(out)):
-                if out[i] is None:
-                    prev = max([k for k in known if k < i], default=None)
-                    nxt = min([k for k in known if k > i], default=None)
-                    t0 = out[prev][1] if prev is not None else 0.0
-                    t1 = out[nxt][0] if nxt is not None else total
-                    span = (nxt if nxt is not None else len(out)) - (prev if prev is not None else -1)
-                    pos = i - (prev if prev is not None else -1)
-                    s0 = t0 + (t1 - t0) * (pos - 1) / span
-                    out[i] = (s0, t0 + (t1 - t0) * pos / span)
-            return [(script_words[i], out[i][0], out[i][1]) for i in range(len(out))]
+        model = WhisperModel("base.en", compute_type="int8")
     except Exception as e:
-        sys.stderr.write(f"whisper timing failed, using estimate: {e}\n")
-    # fallback: proportional by characters
-    n = sum(len(w) + 1 for w in script_words)
-    t, res = 0.0, []
-    for w in script_words:
-        d = total * (len(w) + 1) / n
-        res.append((w, t, t + d)); t += d
+        sys.stderr.write(f"whisper unavailable, using estimate: {e}\n")
+    res = []
+    for i, sc in enumerate(scenes):
+        script_words = sc["text"].split()
+        t0, t1 = times[i]
+        ws = []
+        if model is not None:
+            try:
+                with wave.open(os.path.join(work, f"v{i}.wav")) as wf:
+                    sr = wf.getframerate()
+                    a = np.frombuffer(wf.readframes(wf.getnframes()), np.int16).astype(np.float32) / 32768
+                if sr != 16000:
+                    idx = np.linspace(0, len(a) - 1, int(len(a) * 16000 / sr)).astype(int)
+                    a = a[idx]
+                segs, _ = model.transcribe(a, word_timestamps=True, initial_prompt=sc["text"])
+                ws = [(w.word.strip(), t0 + w.start, t0 + w.end) for s_ in segs for w in s_.words]
+            except Exception as e:
+                sys.stderr.write(f"whisper failed on scene {i}: {e}\n")
+        res += _align(script_words, ws, t0, t1)
     return res
 
 
@@ -263,7 +278,7 @@ def main():
     silent = os.path.join(work, "silent.mp4")
     sh(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", silent])
 
-    words = words_timing(narr, scenes, total)
+    words = words_timing(work, scenes, times)
     ass = os.path.join(work, "caps.ass")
     write_ass(words, ass)
 
