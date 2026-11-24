@@ -259,7 +259,7 @@ def main():
         make_fog(fog)
 
     base_seed = random.randint(1, 10**6)
-    clips = []
+    clips, fallbacks = [], []
     for i, sc in enumerate(scenes):
         img = os.path.join(work, f"img{i}.jpg")
         ok = os.path.exists(img) and os.path.getsize(img) > 20000
@@ -267,6 +267,9 @@ def main():
             ok = fetch_image(sc["image_prompt"], style, img, base_seed + i)
             time.sleep(3)
         print(f"image {i}: {'ai' if ok else 'fallback'}", flush=True)
+        if not ok:
+            fallbacks.append(img)
+            os.rename(img, img + ".fallback.jpg"); img = img + ".fallback.jpg"  # so a rerun fetches it again
         c = os.path.join(work, f"clip{i}.mp4")
         scene_clip(img, times[i][1] - times[i][0], i, c, motion, fog)
         clips.append(c)
@@ -297,7 +300,10 @@ def main():
         "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-maxrate", "6M", "-bufsize", "12M", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-t", f"{total:.2f}", out])
-    shutil.rmtree(work, ignore_errors=True)
+    if fallbacks:
+        print(f"kept {work}: {len(fallbacks)} fallback image(s); rerun to retry only those", flush=True)
+    else:
+        shutil.rmtree(work, ignore_errors=True)
     print(json.dumps({"video": out, "cover": os.path.join(outdir, slug + ".jpg"), "duration": round(total, 1)}))
 
 

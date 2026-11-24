@@ -60,7 +60,7 @@ Story rules:
 `python3 make_video.py stories/YYYY-MM-DD.json videos` (≈3-6 min; image host may throttle, the
 script retries automatically). Confirm `videos/<slug>.mp4` exists and is under 90 MB.
 Spot-check: extract 3 frames with ffmpeg and look at them; captions visible, images not blank.
-If an image is the plain gradient fallback, delete `videos/_work_<slug>/img<N>.jpg` and rerun once.
+If the log shows any `fallback` image, just rerun the same command once: AI images already fetched are reused and only the failed ones are retried.
 
 ## 4. Publish the file
 Commit the story JSON to `main` (do NOT commit mp4/jpg to main; they are gitignored) and push.
