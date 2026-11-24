@@ -7,6 +7,7 @@ story.json:
 {
   "slug": "the-last-caller",
   "style": "dark cinematic digital painting, moody lighting, film grain",
+  "motion": "dynamic",   # optional; "static" (default, slow zoom) or "dynamic" (camera moves, fog, flicker)
   "scenes": [{"text": "Narration sentence(s)...", "image_prompt": "what the picture shows"}, ...]
 }
 Produces OUT_DIR/<slug>.mp4 (1080x1920, 30fps) and OUT_DIR/<slug>.jpg (cover).
@@ -89,16 +90,47 @@ def fetch_image(prompt, style, path, seed):
     return False
 
 
-def scene_clip(img, dur, idx, path):
+def scene_clip(img, dur, idx, path, motion="static", fog=None):
     frames = int(round(dur * FPS))
-    zin = idx % 2 == 0
-    z = "min(1.0+0.0009*on,1.25)" if zin else "max(1.25-0.0009*on,1.0)"
-    vf = (f"crop=iw:ih*0.94:0:0,scale={W*2}:{H*2}:force_original_aspect_ratio=increase,crop={W*2}:{H*2},"
-          f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps={FPS},"
-          f"eq=contrast=1.08:saturation=0.85:brightness=0.0,vignette=PI/4,"
-          f"noise=alls=3:allf=t,format=yuv420p")
-    sh(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-i", img, "-vf", vf,
-        "-frames:v", str(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", path])
+    if motion != "dynamic":
+        zin = idx % 2 == 0
+        z = "min(1.0+0.0009*on,1.25)" if zin else "max(1.25-0.0009*on,1.0)"
+        vf = (f"crop=iw:ih*0.94:0:0,scale={W*2}:{H*2}:force_original_aspect_ratio=increase,crop={W*2}:{H*2},"
+              f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps={FPS},"
+              f"eq=contrast=1.08:saturation=0.85:brightness=0.0,vignette=PI/4,"
+              f"noise=alls=3:allf=t,format=yuv420p")
+        sh(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-i", img, "-vf", vf,
+            "-frames:v", str(frames), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", path])
+        return
+    # "dynamic": eased camera moves (push, pan, pull, tilt), drifting fog, light flicker, grain.
+    e = f"((1-cos(PI*min(on/{frames},1)))/2)"
+    moves = [
+        (f"1.0+0.24*{e}", "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"),            # push in
+        ("1.2", f"(iw-iw/zoom)*{e}", "ih/2-(ih/zoom/2)"),                    # pan left->right
+        (f"1.26-0.24*{e}", "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"),          # pull out
+        ("1.2", "iw/2-(iw/zoom/2)", f"(ih-ih/zoom)*(1-{e})"),                # tilt up
+        (f"1.12+0.1*{e}", f"(iw-iw/zoom)*(1-{e})", "ih/2-(ih/zoom/2)"),      # pan right->left + push
+    ]
+    z, x, y = moves[idx % len(moves)]
+    off = (idx * 137) % 500  # max drift per scene ~10s*45px stays inside the 2W texture
+    fc = (f"[0:v]crop=iw:ih*0.94:0:0,scale={W*2}:{H*2}:force_original_aspect_ratio=increase,crop={W*2}:{H*2},"
+          f"zoompan=z='{z}':x='{x}':y='{y}':d={frames}:s={W}x{H}:fps={FPS},"
+          f"eq=contrast=1.1:saturation=0.8:brightness='-0.015+0.03*sin(5.3*t)*sin(1.9*t+{idx})':eval=frame,"
+          f"format=gbrp[base];"
+          f"[1:v]crop={W}:{H}:x='min(t*45+{off},{W})':y=0,format=gbrp[fog];"
+          f"[base][fog]blend=all_mode=screen:all_opacity=0.22,vignette=PI/4,"
+          f"noise=alls=6:allf=t,fade=t=in:st=0:d=0.25,format=yuv420p[v]")
+    sh(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-i", img, "-loop", "1", "-i", fog,
+        "-filter_complex", fc, "-map", "[v]",
+        "-frames:v", str(frames), "-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", path])
+
+
+def make_fog(path):
+    """Soft cloudy texture twice the frame width; each scene crops a slowly drifting window."""
+    sh(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c=black:s={W//4}x{H//8}",
+        "-vf", f"noise=alls=100:allf=u,gblur=sigma=6,eq=contrast=2.2:brightness=-0.25,"
+               f"scale={W*2}:{H}:flags=bicubic,gblur=sigma=40,format=gray",
+        "-frames:v", "1", path])
 
 
 def words_timing(narr, scenes, total):
@@ -205,6 +237,12 @@ def main():
     narr, times, total = tts(scenes, work)
     print(f"narration {total:.1f}s, {len(scenes)} scenes", flush=True)
 
+    motion = story.get("motion", "static")
+    fog = None
+    if motion == "dynamic":
+        fog = os.path.join(work, "fog.png")
+        make_fog(fog)
+
     base_seed = random.randint(1, 10**6)
     clips = []
     for i, sc in enumerate(scenes):
@@ -215,7 +253,7 @@ def main():
             time.sleep(3)
         print(f"image {i}: {'ai' if ok else 'fallback'}", flush=True)
         c = os.path.join(work, f"clip{i}.mp4")
-        scene_clip(img, times[i][1] - times[i][0], i, c)
+        scene_clip(img, times[i][1] - times[i][0], i, c, motion, fog)
         clips.append(c)
         if i == 0:
             shutil.copy(img, os.path.join(outdir, slug + ".jpg"))

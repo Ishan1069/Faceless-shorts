@@ -1,0 +1,28 @@
+{
+  "series": "mysteries",
+  "slug": "2026-11-24-the-mary-celeste",
+  "title": "The Mary Celeste",
+  "youtube_title": "A Ship Found Sailing With No One Aboard. 150 Years, No Answer. #shorts #mystery",
+  "caption": "Food, water, cargo, all untouched. Ten people, gone. The Mary Celeste has never been explained. 🌊 Follow for a new unsolved mystery.",
+  "hashtags": ["unsolvedmysteries","mystery","history","creepy","oceanmystery","truestory","unexplained"],
+  "style": "dark cinematic digital painting, 19th century, stormy grey ocean light, desaturated, documentary still",
+  "motion": "dynamic",
+  "scenes": [
+    {"text": "In December 1872, sailors spotted a ship drifting in the Atlantic. Nobody was at the wheel.",
+     "image_prompt": "a lone 19th century two masted sailing ship drifting on a grey Atlantic sea, torn sails, overcast sky"},
+    {"text": "Her name was the Mary Celeste. The crew of the Dei Gratia rowed over and climbed aboard.",
+     "image_prompt": "small wooden rowboat approaching a silent sailing ship across choppy grey water, mist"},
+    {"text": "There was no one there. Not the captain, his wife, their two year old daughter, or the seven crew.",
+     "image_prompt": "empty wooden ship deck in fog, coiled ropes, open hatch, no people"},
+    {"text": "There were six months of food and water. The cargo of alcohol was almost untouched.",
+     "image_prompt": "dim ship cargo hold full of old wooden barrels lit by a shaft of grey light"},
+    {"text": "The only lifeboat was gone. The last log entry was nine days old, written near the Azores.",
+     "image_prompt": "open leather ship logbook on a captain's desk by an oil lamp, a sextant beside it"},
+    {"text": "Theories followed for a century and a half. Pirates. Mutiny. A waterspout. Fumes from the cargo.",
+     "image_prompt": "giant waterspout rising from a dark stormy sea beside a distant sailing ship"},
+    {"text": "And the most famous details, the warm tea and half eaten breakfast, never existed.",
+     "image_prompt": "a table set with a teacup and plate in an empty ship cabin, ghostly pale light"},
+    {"text": "A young Arthur Conan Doyle invented them in a story. The truth is simpler and stranger. Ten people stepped off a sound ship, and the sea kept the reason.",
+     "image_prompt": "tiny empty lifeboat alone on a vast calm grey ocean at dusk, seen from far above"}
+  ]
+}

@@ -7,6 +7,32 @@ Goal: publish one new original scary-story short per day to Instagram Reels + Yo
 If `/home/claude/faceless-shorts` is not present, call `add_repo` (owner `Ishan1069`, repo
 `faceless-shorts`, access `push`) and clone it there. `cd` into it. Run `bash setup.sh`.
 
+## 1b. Pick today's series (alternate days, ONE post per day)
+Two series share one daily slot (Metricool free plan ≈20 posts/month, so never post both):
+```
+python3 -c "import datetime,zoneinfo as z;d=datetime.datetime.now(z.ZoneInfo('America/New_York')).date();print('horror' if d.toordinal()%2 else 'mysteries')"
+```
+- `horror` → follow sections 2-6 as written (stories/ folder).
+- `mysteries` → follow section 2M instead of section 2, then sections 3-6 with `mysteries/` in place of `stories/`.
+
+## 2M. Write today's unsolved-mystery script (series "mysteries")
+If `mysteries/YYYY-MM-DD.json` already exists for today (pre-written), use it as-is. Otherwise read the titles in
+`mysteries/*.json` so you never repeat a case, then write `mysteries/YYYY-MM-DD.json` in the same shape as the story
+JSON plus `"series": "mysteries"` and `"motion": "dynamic"` (camera moves, drifting fog, flicker). Use
+`"style": "dark cinematic digital painting, desaturated, documentary still, <era/setting details>"`.
+Rules:
+- A REAL, well-documented unexplained case (vanished ships/planes/expeditions, strange signals, lost
+  colonies, unexplained places/objects). Every fact must be accurate: do a quick WebSearch to confirm dates,
+  numbers and names. Say "theories" for speculation; never state a theory as fact.
+- Prefer older/historical cases. Avoid recent crimes, cases with living suspects or grieving families,
+  graphic deaths, and anything involving harm to children. Don't name private individuals beyond what the
+  standard public record uses.
+- Third-person narrator, 7-9 scenes, 120-160 words. Scene 1 is a one-sentence hook. Final scene is a
+  surprising true detail or the haunting open question.
+- hashtags: unsolvedmysteries, mystery, history, creepy, truestory, unexplained + one case-specific tag.
+- youtube_title ends with `#shorts #mystery`; caption ends with "Follow for a new unsolved mystery."
+- YouTube tags in step 5 for this series: ["unsolved mysteries","mystery","history","unexplained","shorts"].
+
 ## 2. Write today's story
 Read the titles in `stories/*.json` so you never repeat a premise. Write
 `stories/YYYY-MM-DD.json` (today's date, America/New_York) with this shape:
