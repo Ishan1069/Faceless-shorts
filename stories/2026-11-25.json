@@ -1,0 +1,26 @@
+{
+  "slug": "2026-11-25-four-minutes-from-home",
+  "title": "Four Minutes From Home",
+  "youtube_title": "My GPS Said 4 Minutes From Home. For 3 Hours. #shorts #scarystories",
+  "caption": "Driving home for Thanksgiving, my exit kept coming back. Then my mom called from the window. 😨 Follow for a new scary story every day.",
+  "hashtags": ["scarystories","horrortok","creepy","horrorstories","storytime","scary","horror"],
+  "style": "dark cinematic digital painting, eerie moonlight, deep shadows, muted palette, horror movie still",
+  "scenes": [
+    {"text": "My GPS has said four minutes to home for the last three hours.",
+     "image_prompt": "glowing car dashboard GPS screen at night on a dark highway, blurred road through the windshield"},
+    {"text": "I'm driving back for Thanksgiving, on the same highway I've taken every year since college.",
+     "image_prompt": "empty two-lane highway at night lined with bare autumn trees, headlights cutting through light fog"},
+    {"text": "Exit forty one, my exit, keeps passing on the right. Same dented sign. Same flickering streetlight.",
+     "image_prompt": "dented green highway exit sign at night under a single flickering streetlight, empty road"},
+    {"text": "So I take it. The ramp curves through the dark, and drops me right back onto the highway, at mile marker thirty eight.",
+     "image_prompt": "curving highway off-ramp at night disappearing into darkness, small roadside mile marker post in headlights"},
+    {"text": "Finally my phone rings. It's my mom. She asks why I've been sitting in the driveway with the engine running.",
+     "image_prompt": "smartphone lighting up on a car passenger seat at night, incoming call glow, dark car interior"},
+    {"text": "I tell her I'm not home yet. I'm still on the highway. There's a long silence.",
+     "image_prompt": "view through a car windshield of an endless dark highway at night, no other cars, faint fog"},
+    {"text": "Then she whispers, honey, I can see you from the kitchen window. You're right there.",
+     "image_prompt": "warm lit kitchen window of a suburban house at night seen from outside, lace curtain pulled aside, silhouette"},
+    {"text": "I look in the rearview mirror. My house is behind me, porch light on. And in the driveway sits my car, with someone in the driver's seat, waving.",
+     "image_prompt": "car rearview mirror at night reflecting a suburban house with porch light on and a parked car in the driveway, eerie"}
+  ]
+}
